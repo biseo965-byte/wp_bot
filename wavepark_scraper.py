@@ -67,7 +67,7 @@ HEADERS     = {
 }
 
 # 동시 요청 수 제한 (너무 높이면 서버가 503 반환할 수 있음)
-DEFAULT_CONCURRENCY = 8
+DEFAULT_CONCURRENCY = 20
 
 # 현재 시즌 종료 며칠 전부터 다음 시즌도 수집할지
 NEXT_SEASON_LOOKAHEAD_DAYS = 14
@@ -83,6 +83,16 @@ TARGET_ITEMS: dict[str, str] = {
     "18":    "리프자유서핑(상급)",   # secType 30
     "27809": "Lv.4 라인업레슨",      # secType 70
     "27808": "Lv.5 턴기초레슨",      # secType 70
+}
+
+# 상품별 고정 정원 (좌, 우)
+# API의 zone_max_cnt 대신 이 값을 사용합니다.
+ITEM_CAPACITY: dict[str, tuple[int, int]] = {
+    "13":    (25, 25),   # 초급  — 좌 25 / 우 25
+    "14":    (25, 25),   # 중급  — 좌 25 / 우 25
+    "18":    (17, 17),   # 상급  — 좌 17 / 우 17
+    "27809": (15,  0),   # Lv.4  — 좌 15 / 우 없음
+    "27808": (15,  0),   # Lv.5  — 좌 15 / 우 없음
 }
 
 logging.basicConfig(
@@ -103,7 +113,8 @@ class Season:
     start:         date
     end:           date
     label:         str
-    wave_schedule: dict = field(default_factory=dict)  # {"weekday": {"09:00": ["M1","M2"], ...}, "weekend": {...}}
+    wave_schedule: dict      = field(default_factory=dict)   # {"weekday": {"09:00": ["M1","M2"], ...}, "weekend": {...}}
+    item_catalog:  list[dict] = field(default_factory=list)  # getList 결과 캐시 (pick_date 제외)
 
     def get_wave_tags(self, pick_date: str, pick_datetime: str) -> list[str]:
         """날짜(평일/주말)와 시간으로 wave_tags 반환. 매핑 없으면 빈 리스트."""
@@ -141,9 +152,35 @@ def load_seasons() -> list[Season]:
             end           = date.fromisoformat(s["end"]),
             label         = s["label"],
             wave_schedule = s.get("wave_schedule", {}),
+            item_catalog  = s.get("item_catalog", []),
         )
         for s in raw["seasons"]
     ], key=lambda s: s.number)
+
+
+def _save_item_catalog(season: Season, items: list) -> None:
+    """getList 결과를 seasons JSON에 캐시 저장 (최초 1회)"""
+    catalog = [
+        {
+            "item_idx":   it.item_idx,
+            "sec_type":   it.sec_type.value,
+            "badge_type": it.badge_type.value,
+            "name":       it.name,
+            "price_raw":  it.price_raw,
+        }
+        for it in items
+    ]
+    season.item_catalog = catalog
+
+    with open(SEASONS_FILE, encoding="utf-8") as f:
+        raw = json.load(f)
+    for s in raw["seasons"]:
+        if s["number"] == season.number:
+            s["item_catalog"] = catalog
+            break
+    with open(SEASONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(raw, f, ensure_ascii=False, indent=2)
+    log.info(f"[캐시] 시즌 {season.number} 상품 목록 저장 ({len(catalog)}개) → wavepark_seasons.json")
 
 
 def _create_default_seasons_file() -> None:
@@ -367,8 +404,13 @@ def parse_wave_zone(wave_html: str, zone_html: str) -> WaveZoneResult:
 
 class AsyncWaveparkClient:
     def __init__(self, session: aiohttp.ClientSession, sem: asyncio.Semaphore):
-        self.session = session
-        self.sem     = sem
+        self.session   = session
+        self.sem       = sem
+        # getWaveZone Task 캐시: (item_idx, "HH:MM") → asyncio.Task
+        # 동일 key의 concurrent 요청들이 같은 Task를 await → 실제 HTTP는 1회만
+        self._wz_tasks: dict[tuple[str, str], asyncio.Task] = {}
+        self._wz_hits  = 0
+        self._wz_total = 0
 
     async def _post(self, path: str, data: dict) -> dict:
         async with self.sem:                            # 동시 요청 수 제한
@@ -389,18 +431,38 @@ class AsyncWaveparkClient:
             return []
 
     async def get_detail(self, item: WaveparkItem) -> ItemDetail:
-        data = await self._post("/bookingone/getDetail", {
+        payload = {
             "pickdate": item.pick_date,
             "secType":  item.sec_type.value,
             "itemIdx":  item.item_idx,
-        })
-        return parse_detail(data.get("html", ""))
+        }
+        last_exc: Exception = Exception("unknown")
+        for attempt in range(2):
+            try:
+                data = await self._post("/bookingone/getDetail", payload)
+                return parse_detail(data.get("html", ""))
+            except Exception as e:
+                last_exc = e
+                if attempt == 0:
+                    await asyncio.sleep(1)
+        raise last_exc
 
-    async def get_wave_zone(self, slot: TimeSlot, no: int = 0) -> WaveZoneResult:
+    async def _fetch_wave_zone_raw(self, slot: TimeSlot, no: int) -> WaveZoneResult:
         data = await self._post("/bookingone/getWaveZone", {
             "no": str(no), "itemIdx": slot.item_idx, "pickdatetime": slot.pick_datetime,
         })
         return parse_wave_zone(data.get("waveHtml", ""), data.get("zoneHtml", ""))
+
+    async def get_wave_zone(self, slot: TimeSlot, no: int = 0) -> WaveZoneResult:
+        cache_key = (slot.item_idx, slot.pick_datetime[11:16])  # ("13", "09:00")
+        self._wz_total += 1
+        if cache_key not in self._wz_tasks:
+            self._wz_tasks[cache_key] = asyncio.ensure_future(
+                self._fetch_wave_zone_raw(slot, no)
+            )
+        else:
+            self._wz_hits += 1
+        return await self._wz_tasks[cache_key]
 
 
 # ──────────────────────────────────────────────
@@ -453,7 +515,7 @@ async def fetch_slot(
     try:
         wz = await client.get_wave_zone(slot)
     except Exception as e:
-        log.warning(f"  getWaveZone 실패 [{item.name} / {slot.label}]: {e}")
+        log.warning(f"  getWaveZone 실패 [{item.name} / {slot.label}]: {repr(e)}")
         wz = None
 
     if not wz or not wz.positions:
@@ -485,7 +547,7 @@ async def fetch_item(
     try:
         detail = await client.get_detail(item)
     except Exception as e:
-        log.warning(f"  getDetail 실패 [{item.name}]: {e}")
+        log.warning(f"  getDetail 실패 [{item.name} / {item.pick_date}]: {repr(e)}")
         return []
 
     if not detail.slots:
@@ -512,23 +574,39 @@ async def fetch_date(
     target_types:   set[str],
     available_only: bool,
 ) -> list[ZoneSlot]:
-    """날짜 1개 → getList → 상품 병렬 처리"""
-    items = await client.get_list(d)
+    """날짜 1개 → 상품 목록 확보 → 상품 병렬 처리"""
 
-    # TARGET_ITEMS + secType 필터
-    items = [
-        it for it in items
-        if it.item_idx in TARGET_ITEMS
-        and it.sec_type.value in target_types
-    ]
-
-    # 같은 날 중복 itemIdx 제거
-    seen: set[str] = set()
-    unique_items: list[WaveparkItem] = []
-    for it in items:
-        if it.item_idx not in seen:
-            seen.add(it.item_idx)
-            unique_items.append(it)
+    if season.item_catalog:
+        # ── 캐시 HIT: getList 생략, JSON 카탈로그에서 재구성 ──
+        unique_items = [
+            WaveparkItem(
+                pick_date  = d.isoformat(),
+                item_idx   = c["item_idx"],
+                sec_type   = SecType(c["sec_type"]),
+                badge_type = BadgeType(c["badge_type"]),
+                name       = c["name"],
+                price_raw  = c["price_raw"],
+            )
+            for c in season.item_catalog
+            if c["item_idx"] in TARGET_ITEMS and c["sec_type"] in target_types
+        ]
+    else:
+        # ── 캐시 MISS: getList 호출 ──
+        raw_items = await client.get_list(d)
+        filtered  = [
+            it for it in raw_items
+            if it.item_idx in TARGET_ITEMS and it.sec_type.value in target_types
+        ]
+        # 중복 itemIdx 제거
+        seen: set[str] = set()
+        unique_items: list[WaveparkItem] = []
+        for it in filtered:
+            if it.item_idx not in seen:
+                seen.add(it.item_idx)
+                unique_items.append(it)
+        # 최초 결과를 JSON에 저장 (이후 날짜는 캐시 사용)
+        if unique_items and not season.item_catalog:
+            _save_item_catalog(season, unique_items)
 
     if not unique_items:
         return []
@@ -593,9 +671,15 @@ async def scrape_async(
         nested = await asyncio.gather(*tasks, return_exceptions=False)
         results = [entry for sub in nested for entry in sub]
 
-    elapsed = time.perf_counter() - t0
+    elapsed   = time.perf_counter() - t0
+    wz_saved  = client._wz_hits
+    wz_total  = client._wz_total
+    wz_actual = wz_total - wz_saved
     log.info(f"\n{'━'*52}")
-    log.info(f"수집 완료: 총 {len(results)}개 ZoneSlot  ({elapsed:.1f}초)")
+    log.info(
+        f"수집 완료: 총 {len(results)}개 ZoneSlot  ({elapsed:.1f}초)  "
+        f"getWaveZone {wz_actual}/{wz_total}회 실요청 (캐시 {wz_saved}회 절약)"
+    )
     return results
 
 
@@ -688,8 +772,10 @@ def _build_sessions_rows(results: list[ZoneSlot], scraped_at: str) -> list[dict]
     zone_slots 리스트를 프론트엔드 sessions 테이블 rows로 집계합니다.
 
     집계 키: (pick_date, pick_datetime, item_idx)
-    좌/우 잔여석: API에서 per-side 잔여석을 제공하지 않으므로
-                 좌/우 zone_max_cnt 비율로 slot_remaining을 배분합니다.
+    좌/우 정원: ITEM_CAPACITY 고정값 사용 (API zone_max_cnt 미사용)
+    좌/우 잔여석: 정원 비율로 slot_remaining 배분
+                 정원이 같으면 (초급·중급·상급) 50/50 분할
+                 레슨(Lv.4·Lv.5)은 좌측 전체 배정
     """
     groups: dict[tuple, list[ZoneSlot]] = defaultdict(list)
     for r in results:
@@ -697,17 +783,14 @@ def _build_sessions_rows(results: list[ZoneSlot], scraped_at: str) -> list[dict]
 
     rows: list[dict] = []
     for (pick_date, pick_datetime, item_idx), slots in groups.items():
-        sample      = slots[0]
-        left_slots  = [s for s in slots if s.wave_side == "좌측"]
-        right_slots = [s for s in slots if s.wave_side == "우측"]
-
-        left_cap  = sum(s.zone_max_cnt for s in left_slots)
-        right_cap = sum(s.zone_max_cnt for s in right_slots)
-        total_cap = left_cap + right_cap
-
+        sample    = slots[0]
         remaining = sample.slot_remaining
 
-        # 좌/우 잔여석 비율 배분 (총 정원이 없으면 동일 값 사용)
+        # 고정 정원 적용
+        left_cap, right_cap = ITEM_CAPACITY.get(item_idx, (0, 0))
+        total_cap = left_cap + right_cap
+
+        # 좌/우 잔여석 정원 비율 배분
         if total_cap:
             left_rem  = round(remaining * left_cap  / total_cap)
             right_rem = round(remaining * right_cap / total_cap)
@@ -723,19 +806,16 @@ def _build_sessions_rows(results: list[ZoneSlot], scraped_at: str) -> list[dict]
             "difficulty":      _difficulty_from_name(sample.item_name),
             "wave_tags":       sample.wave_tags,
             "left_remaining":  left_rem,
-            "left_capacity":   left_cap or sample.slot_capacity,
+            "left_capacity":   left_cap,
             "right_remaining": right_rem,
-            "right_capacity":  right_cap or sample.slot_capacity,
+            "right_capacity":  right_cap,
             "scraped_at":      scraped_at,
         }
 
-        if sample.sec_type == "70":  # 레슨 블록
+        if sample.sec_type == "70":  # 레슨 블록 (좌측 전용)
             row["lesson_remaining"] = remaining
-            row["lesson_capacity"]  = sample.slot_capacity
-            if left_slots:
-                row["lesson_cove_side"] = "좌측"
-            elif right_slots:
-                row["lesson_cove_side"] = "우측"
+            row["lesson_capacity"]  = left_cap  # ITEM_CAPACITY 고정값 (15)
+            row["lesson_cove_side"] = "좌측"
 
         rows.append(row)
 
@@ -776,20 +856,12 @@ def upsert_to_supabase(results: list[ZoneSlot]) -> None:
     scraped_at = datetime.utcnow().isoformat()
     CHUNK      = 500
 
-    # ── zone_slots ────────────────────────────────────────────
-    zone_rows = [{**r.to_dict(), "scraped_at": scraped_at} for r in results]
-    log.info(f"[Supabase] zone_slots upsert — {len(zone_rows)}행")
-    for i in range(0, len(zone_rows), CHUNK):
-        chunk = zone_rows[i : i + CHUNK]
-        client.table("zone_slots").upsert(chunk).execute()
-        log.info(f"  zone_slots  {min(i + CHUNK, len(zone_rows))}/{len(zone_rows)}")
-
     # ── sessions ──────────────────────────────────────────────
     session_rows = _build_sessions_rows(results, scraped_at)
     log.info(f"[Supabase] sessions upsert — {len(session_rows)}행")
     for i in range(0, len(session_rows), CHUNK):
         chunk = session_rows[i : i + CHUNK]
-        client.table("sessions").upsert(chunk).execute()
+        client.table("sessions").upsert(chunk, on_conflict="pick_datetime,item_idx").execute()
         log.info(f"  sessions    {min(i + CHUNK, len(session_rows))}/{len(session_rows)}")
 
     log.info("[Supabase] 완료")
