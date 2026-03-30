@@ -505,7 +505,12 @@ class AsyncWaveparkClient:
             )
         else:
             self._wz_hits += 1
-        return await self._wz_tasks[cache_key]
+        try:
+            return await self._wz_tasks[cache_key]
+        except Exception:
+            # 실패한 Task를 캐시에서 제거 → 같은 key 후속 요청이 재시도 가능하도록
+            self._wz_tasks.pop(cache_key, None)
+            raise
 
 
 # ──────────────────────────────────────────────
@@ -559,13 +564,10 @@ async def fetch_slot(
         wz = await client.get_wave_zone(slot)
     except Exception as e:
         log.warning(f"  getWaveZone 실패 [{item.name} / {slot.label}]: {repr(e)}")
-        wz = None
+        return []  # 실패 시 저장하지 않음 (이전 DB 데이터 유지)
 
     if not wz or not wz.positions:
-        entry = _make_zone_slot(season, item, slot)
-        if not (available_only and not entry.available):
-            results.append(entry)
-        return results
+        return []
 
     for pos in wz.positions:
         for zone in wz.zones_for(pos.sch_idx):
