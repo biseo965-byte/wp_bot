@@ -67,7 +67,7 @@ HEADERS     = {
 }
 
 # 동시 요청 수 제한 (너무 높이면 서버가 503 반환할 수 있음)
-DEFAULT_CONCURRENCY = 20
+DEFAULT_CONCURRENCY = 5
 
 # 현재 시즌 종료 며칠 전부터 다음 시즌도 수집할지
 NEXT_SEASON_LOOKAHEAD_DAYS = 14
