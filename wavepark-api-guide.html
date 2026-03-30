@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>웨이브파크 API 연동 가이드</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0f1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #1e2d45;
+    --accent: #00c8ff;
+    --accent2: #0066ff;
+    --success: #00e5a0;
+    --warn: #ffb700;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --red: #ff4d6d;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Noto Sans KR', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: 100vh; }
+
+  nav {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 32px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .nav-logo {
+    padding: 0 24px 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .nav-logo .badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #fff;
+    font-size: 9px;
+    font-family: var(--mono);
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 8px;
+  }
+
+  .nav-logo h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .nav-logo p {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .nav-section-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    padding: 12px 24px 6px;
+  }
+
+  nav a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 24px;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  nav a:hover, nav a.active {
+    color: var(--accent);
+    background: rgba(0,200,255,0.05);
+    border-left-color: var(--accent);
+  }
+
+  nav a .method {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0,200,255,0.15);
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  main {
+    flex: 1;
+    padding: 48px 56px;
+    max-width: 900px;
+  }
+
+  /* ── Section ── */
+  section {
+    margin-bottom: 64px;
+    scroll-margin-top: 32px;
+  }
+
+  .section-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 28px 0 12px;
+  }
+
+  p {
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── Endpoint Card ── */
+  .endpoint-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+
+  .endpoint-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .method-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 5px;
+    flex-shrink: 0;
+  }
+
+  .method-post { background: rgba(0,102,255,0.2); color: #60a5fa; }
+  .method-get  { background: rgba(0,229,160,0.15); color: var(--success); }
+
+  .endpoint-url {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  /* ── Table ── */
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .param-table th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .param-table td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    font-size: 13px;
+  }
+
+  .param-table tr:last-child td { border-bottom: none; }
+
+  .param-name {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .param-type {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: rgba(255,183,0,0.1);
+    color: var(--warn);
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .param-required {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(255,77,109,0.12);
+    color: var(--red);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+
+  .param-optional {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(100,116,139,0.15);
+    color: var(--text-muted);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+
+  .param-desc { color: var(--text-dim); }
+  .param-example { color: var(--text-muted); font-family: var(--mono); font-size: 11px; margin-top: 4px; }
+
+  /* ── Code Block ── */
+  .code-block {
+    position: relative;
+    background: #060d1a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 16px 0;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: rgba(0,0,0,0.3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .code-lang {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+
+  .copy-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  pre {
+    padding: 20px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--text-dim);
+  }
+
+  .kw   { color: #60a5fa; }
+  .str  { color: #86efac; }
+  .num  { color: var(--warn); }
+  .cmt  { color: #475569; font-style: italic; }
+  .fn   { color: #c084fc; }
+  .var  { color: var(--accent); }
+  .key  { color: #f9a8d4; }
+
+  /* ── Response Fields ── */
+  .response-section {
+    padding: 20px;
+  }
+
+  .field-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .field-row:last-child { border-bottom: none; }
+
+  .field-key {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    min-width: 120px;
+    flex-shrink: 0;
+  }
+
+  .field-val {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .field-val .type { }
+  .field-val .desc { color: var(--text-dim); font-size: 13px; }
+
+  /* ── Data Attributes ── */
+  .attr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 20px;
+  }
+
+  .attr-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .attr-card .attr-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .attr-card .attr-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .attr-card .attr-example {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--warn);
+  }
+
+  /* ── sectype Table ── */
+  .sectype-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 20px;
+  }
+
+  .sectype-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .sectype-card .code {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .sectype-card .label {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .sectype-card .items {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ── Info Box ── */
+  .info-box {
+    background: rgba(0,200,255,0.06);
+    border: 1px solid rgba(0,200,255,0.2);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .info-box .icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .info-box .text { font-size: 13px; color: var(--text-dim); }
+  .info-box .text strong { color: var(--accent); }
+
+  .warn-box {
+    background: rgba(255,183,0,0.06);
+    border-color: rgba(255,183,0,0.25);
+  }
+
+  .warn-box .text strong { color: var(--warn); }
+
+  /* ── Tag ── */
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .tag-단품 { background: rgba(0,229,160,0.12); color: var(--success); }
+  .tag-패키지 { background: rgba(0,102,255,0.15); color: #60a5fa; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ── Sidebar ── -->
+<nav>
+  <div class="nav-logo">
+    <div class="badge">API GUIDE</div>
+    <h1>웨이브파크<br>연동 가이드</h1>
+    <p>wavepark.co.kr</p>
+  </div>
+
+  <div class="nav-section-label">ENDPOINTS</div>
+  <a href="#get-list" class="active">
+    <span class="method">POST</span>
+    날짜별 상품 목록
+  </a>
+  <a href="#get-detail">
+    <span class="method">POST</span>
+    상품 상세 조회
+  </a>
+  <a href="#get-wave-zone">
+    <span class="method">POST</span>
+    파도위치·구역 조회
+  </a>
+
+  <div class="nav-section-label">REFERENCE</div>
+  <a href="#response-structure">응답 구조</a>
+  <a href="#sectype">sectype 코드표</a>
+  <a href="#data-attrs">data 속성</a>
+  <a href="#itemidx-table">itemIdx 목록</a>
+  <a href="#parsing">HTML 파싱</a>
+  <a href="#sample-code">샘플 코드</a>
+</nav>
+
+<!-- ── Main ── -->
+<main>
+
+  <!-- Overview -->
+  <section id="overview">
+    <div class="section-tag">OVERVIEW</div>
+    <h2>웨이브파크 예약 API</h2>
+    <p>wavepark.co.kr의 예약 시스템에서 사용하는 내부 API입니다. 날짜를 기준으로 예약 가능한 상품 목록을 조회할 수 있으며, 응답은 렌더링된 HTML 형태로 반환됩니다.</p>
+
+    <div class="info-box">
+      <span class="icon">ℹ️</span>
+      <div class="text">
+        <strong>Base URL</strong>: <code>https://www.wavepark.co.kr</code><br>
+        응답 Content-Type은 <code>application/json</code>이나, <code>html</code> 필드에 렌더링된 HTML이 담깁니다.
+      </div>
+    </div>
+  </section>
+
+  <!-- Endpoint 1 -->
+  <section id="get-list">
+    <div class="section-tag">ENDPOINT 01</div>
+    <h2>날짜별 상품 목록 조회</h2>
+    <p>특정 날짜에 예약 가능한 서핑 상품(레슨, 자유서핑, 패키지) 목록을 조회합니다.</p>
+
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge method-post">POST</span>
+        <span class="endpoint-url">/bookingone/getList</span>
+      </div>
+
+      <h3 style="padding: 16px 20px 0; font-size:13px; color: var(--text-muted); font-family: var(--mono); font-weight:600; letter-spacing:1px;">REQUEST</h3>
+
+      <div class="info-box" style="margin: 8px 20px;">
+        <span class="icon">📋</span>
+        <div class="text">
+          Content-Type: <strong>application/x-www-form-urlencoded</strong>
+        </div>
+      </div>
+
+      <table class="param-table">
+        <thead>
+          <tr>
+            <th>파라미터</th>
+            <th>타입</th>
+            <th>필수</th>
+            <th>설명 / 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="param-name">yy</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">조회 연도</div>
+              <div class="param-example">예) "2026"</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">mm</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">조회 월 (1~12, 앞에 0 없이)</div>
+              <div class="param-example">예) "4" (4월), "12" (12월)</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">selectYmd</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">조회할 특정 날짜 (yyyy-MM-dd 형식)</div>
+              <div class="param-example">예) "2026-04-25"</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Request Code -->
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">HTTP · RAW</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre>POST /bookingone/getList HTTP/1.1
+Host: www.wavepark.co.kr
+Content-Type: application/x-www-form-urlencoded
+
+yy=2026&mm=4&selectYmd=2026-04-26</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · OkHttp</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">val</span> <span class="var">client</span> = OkHttpClient()
+
+<span class="kw">val</span> <span class="var">body</span> = FormBody.Builder()
+    .add(<span class="str">"yy"</span>, <span class="str">"2026"</span>)
+    .add(<span class="str">"mm"</span>, <span class="str">"4"</span>)
+    .add(<span class="str">"selectYmd"</span>, <span class="str">"2026-04-26"</span>)
+    .build()
+
+<span class="kw">val</span> <span class="var">request</span> = Request.Builder()
+    .url(<span class="str">"https://www.wavepark.co.kr/bookingone/getList"</span>)
+    .post(<span class="var">body</span>)
+    .build()
+
+<span class="kw">val</span> <span class="var">response</span> = client.newCall(<span class="var">request</span>).execute()
+<span class="kw">val</span> <span class="var">json</span> = JSONObject(<span class="var">response</span>.body?.string() ?: <span class="str">""</span>)
+<span class="kw">val</span> <span class="var">html</span> = <span class="var">json</span>.getString(<span class="str">"html"</span>)</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">PYTHON · requests</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">import</span> requests
+
+<span class="var">url</span> = <span class="str">"https://www.wavepark.co.kr/bookingone/getList"</span>
+<span class="var">data</span> = {
+    <span class="str">"yy"</span>: <span class="str">"2026"</span>,
+    <span class="str">"mm"</span>: <span class="str">"4"</span>,
+    <span class="str">"selectYmd"</span>: <span class="str">"2026-04-26"</span>,
+}
+
+<span class="var">res</span> = requests.<span class="fn">post</span>(<span class="var">url</span>, data=<span class="var">data</span>)
+<span class="var">payload</span> = <span class="var">res</span>.<span class="fn">json</span>()
+<span class="var">html_str</span> = <span class="var">payload</span>[<span class="str">"html"</span>]</pre>
+    </div>
+  </section>
+
+  <!-- Response Structure -->
+  <section id="response-structure">
+    <div class="section-tag">RESPONSE</div>
+    <h2>응답 구조</h2>
+    <p>응답은 JSON 객체이며, 렌더링된 HTML이 <code>html</code> 키에 담겨 옵니다.</p>
+
+    <div class="endpoint-card">
+      <div class="response-section">
+        <div class="field-row">
+          <span class="field-key">msg</span>
+          <div class="field-val">
+            <span><span class="param-type">string</span></span>
+            <span class="desc">에러 메시지. 정상 응답 시 빈 문자열 <code>""</code></span>
+          </div>
+        </div>
+        <div class="field-row">
+          <span class="field-key">html</span>
+          <div class="field-val">
+            <span><span class="param-type">string (HTML)</span></span>
+            <span class="desc">선택한 날짜에 해당하는 상품 카드들의 HTML 마크업. <code>&lt;article class="card"&gt;</code> 요소의 연속.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Raw Response Example -->
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">JSON · RESPONSE EXAMPLE</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre>{
+  <span class="key">"msg"</span>: <span class="str">""</span>,
+  <span class="key">"html"</span>: <span class="str">"&lt;article class=\"card\" data-pickdate=\"2026-04-26\"
+           data-itemidx=\"30902\" data-sectype=\"90\"&gt;
+    &lt;div class=\"card-thumb\"&gt;...&lt;/div&gt;
+    &lt;div class=\"card-body\"&gt;
+      &lt;span class=\"card-badge-origin\"&gt;패키지&lt;/span&gt;
+      &lt;p class=\"card-name\"&gt;[주말] 리프자유서핑(중급+상급) 2시간&lt;/p&gt;
+      &lt;p class=\"card-price\"&gt;145,000원&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/article&gt;..."</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- HTML Article Structure -->
+  <section id="data-attrs">
+    <div class="section-tag">HTML STRUCTURE</div>
+    <h2>카드 HTML 구조 및 data 속성</h2>
+    <p>html 필드 안의 각 <code>&lt;article&gt;</code>은 하나의 상품을 나타냅니다.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">HTML · CARD STRUCTURE</span>
+      </div>
+      <pre><span class="cmt">&lt;!-- 상품 카드 1개의 구조 --&gt;</span>
+&lt;<span class="kw">article</span> class=<span class="str">"card"</span>
+         data-pickdate=<span class="str">"2026-04-26"</span>   <span class="cmt">&lt;!-- 예약 날짜 --&gt;</span>
+         data-itemidx=<span class="str">"30902"</span>         <span class="cmt">&lt;!-- 상품 고유 ID --&gt;</span>
+         data-sectype=<span class="str">"90"</span>&gt;            <span class="cmt">&lt;!-- 카테고리 코드 --&gt;</span>
+
+  &lt;<span class="kw">div</span> class=<span class="str">"card-thumb"</span>&gt;
+    &lt;<span class="kw">img</span> src=<span class="str">"/assets/wavepark/img/noimg.jpg"</span> alt=<span class="str">""</span>&gt;
+  &lt;/<span class="kw">div</span>&gt;
+
+  &lt;<span class="kw">div</span> class=<span class="str">"card-body"</span>&gt;
+    <span class="cmt">&lt;!-- 상품 유형: "패키지" | "단품" --&gt;</span>
+    &lt;<span class="kw">span</span> class=<span class="str">"card-badge-origin"</span>&gt;패키지&lt;/<span class="kw">span</span>&gt;
+    &lt;<span class="kw">p</span> class=<span class="str">"card-name"</span>&gt;[주말] 리프자유서핑(중급+상급) 2시간_4/25~6/5&lt;/<span class="kw">p</span>&gt;
+    &lt;<span class="kw">p</span> class=<span class="str">"card-desc"</span>&gt;&lt;/<span class="kw">p</span>&gt;    <span class="cmt">&lt;!-- 설명 (현재는 빈 값) --&gt;</span>
+    &lt;<span class="kw">p</span> class=<span class="str">"card-price"</span>&gt;145,000원&lt;/<span class="kw">p</span>&gt;  <span class="cmt">&lt;!-- 단품은 "~" 붙음 --&gt;</span>
+  &lt;/<span class="kw">div</span>&gt;
+&lt;/<span class="kw">article</span>&gt;</pre>
+    </div>
+
+    <h3>data 속성 상세</h3>
+    <div class="endpoint-card">
+      <div class="attr-grid">
+        <div class="attr-card">
+          <div class="attr-name">data-pickdate</div>
+          <div class="attr-desc">예약 대상 날짜</div>
+          <div class="attr-example">"2026-04-26"</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">data-itemidx</div>
+          <div class="attr-desc">상품 고유 ID (예약 API 호출 시 사용 추정)</div>
+          <div class="attr-example">"30902", "27812", "18"</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">data-sectype</div>
+          <div class="attr-desc">상품 카테고리 코드 (하단 코드표 참고)</div>
+          <div class="attr-example">"30", "70", "90"</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">card-badge-origin</div>
+          <div class="attr-desc">상품 유형 텍스트</div>
+          <div class="attr-example"><span class="tag tag-단품">단품</span> <span class="tag tag-패키지">패키지</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- sectype -->
+  <section id="sectype">
+    <div class="section-tag">REFERENCE</div>
+    <h2>sectype 코드표</h2>
+    <p>응답 데이터 분석 결과 확인된 카테고리 코드입니다.</p>
+
+    <div class="endpoint-card">
+      <div class="sectype-grid">
+        <div class="sectype-card">
+          <div class="code">30</div>
+          <div class="label">자유서핑</div>
+          <div class="items">베이자유서핑<br>리프자유서핑(초·중·상급)</div>
+        </div>
+        <div class="sectype-card">
+          <div class="code">70</div>
+          <div class="label">레슨</div>
+          <div class="items">Lv.1~5 레슨<br>입문·패들·사이드라이딩·라인업·턴</div>
+        </div>
+        <div class="sectype-card">
+          <div class="code">90</div>
+          <div class="label">패키지</div>
+          <div class="items">주말 리프자유서핑<br>초급~상급 조합 2시간 패키지</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warn-box">
+      <span class="icon">⚠️</span>
+      <div class="text">
+        <strong>주의</strong>: 이외의 sectype 코드가 존재할 수 있습니다. (예: 이벤트, 단체 등) 파싱 시 알 수 없는 코드에 대한 fallback 처리를 권장합니다.
+      </div>
+    </div>
+  </section>
+
+  <!-- Parsing Guide -->
+  <section id="parsing">
+    <div class="section-tag">PARSING GUIDE</div>
+    <h2>HTML 파싱 방법</h2>
+    <p>응답 HTML에서 상품 정보를 구조화된 데이터로 추출하는 방법입니다.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · Jsoup 파싱</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="cmt">// build.gradle: implementation("org.jsoup:jsoup:1.17.2")</span>
+
+<span class="kw">data class</span> <span class="fn">WaveparkItem</span>(
+    <span class="kw">val</span> pickDate: String,
+    <span class="kw">val</span> itemIdx: String,
+    <span class="kw">val</span> secType: String,
+    <span class="kw">val</span> badgeType: String,   <span class="cmt">// "단품" | "패키지"</span>
+    <span class="kw">val</span> name: String,
+    <span class="kw">val</span> price: String,
+)
+
+<span class="kw">fun</span> <span class="fn">parseItems</span>(html: String): List&lt;WaveparkItem&gt; {
+    <span class="kw">val</span> doc = Jsoup.<span class="fn">parseBodyFragment</span>(html)
+    <span class="kw">return</span> doc.<span class="fn">select</span>(<span class="str">"article.card"</span>).<span class="fn">map</span> { el ->
+        WaveparkItem(
+            pickDate = el.attr(<span class="str">"data-pickdate"</span>),
+            itemIdx  = el.attr(<span class="str">"data-itemidx"</span>),
+            secType  = el.attr(<span class="str">"data-sectype"</span>),
+            badgeType = el.<span class="fn">selectFirst</span>(<span class="str">".card-badge-origin"</span>)?.text() ?: <span class="str">""</span>,
+            name     = el.<span class="fn">selectFirst</span>(<span class="str">".card-name"</span>)?.text() ?: <span class="str">""</span>,
+            price    = el.<span class="fn">selectFirst</span>(<span class="str">".card-price"</span>)?.text() ?: <span class="str">""</span>,
+        )
+    }
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">PYTHON · BeautifulSoup</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">from</span> bs4 <span class="kw">import</span> BeautifulSoup
+
+<span class="kw">def</span> <span class="fn">parse_items</span>(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, <span class="str">"html.parser"</span>)
+    items = []
+    <span class="kw">for</span> card <span class="kw">in</span> soup.<span class="fn">find_all</span>(<span class="str">"article"</span>, class_=<span class="str">"card"</span>):
+        items.<span class="fn">append</span>({
+            <span class="str">"pickDate"</span> : card.get(<span class="str">"data-pickdate"</span>),
+            <span class="str">"itemIdx"</span>  : card.get(<span class="str">"data-itemidx"</span>),
+            <span class="str">"secType"</span>  : card.get(<span class="str">"data-sectype"</span>),
+            <span class="str">"badgeType"</span>: card.<span class="fn">find</span>(class_=<span class="str">"card-badge-origin"</span>).text.strip(),
+            <span class="str">"name"</span>     : card.<span class="fn">find</span>(class_=<span class="str">"card-name"</span>).text.strip(),
+            <span class="str">"price"</span>    : card.<span class="fn">find</span>(class_=<span class="str">"card-price"</span>).text.strip(),
+        })
+    <span class="kw">return</span> items</pre>
+    </div>
+  </section>
+
+  <!-- Endpoint 2: getDetail -->
+  <section id="get-detail">
+    <div class="section-tag">ENDPOINT 02</div>
+    <h2>상품 상세 조회</h2>
+    <p>특정 상품의 예약 모달 HTML을 가져옵니다. 타임슬롯(잔여석 포함), 수량 선택, 파도위치/서핑구역 선택 UI가 포함됩니다.</p>
+
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge method-post">POST</span>
+        <span class="endpoint-url">/bookingone/getDetail</span>
+      </div>
+
+      <h3 style="padding: 16px 20px 0; font-size:13px; color: var(--text-muted); font-family: var(--mono); font-weight:600; letter-spacing:1px;">REQUEST</h3>
+
+      <div class="info-box" style="margin: 8px 20px;">
+        <span class="icon">&#128203;</span>
+        <div class="text">Content-Type: <strong>application/x-www-form-urlencoded</strong></div>
+      </div>
+
+      <table class="param-table">
+        <thead>
+          <tr>
+            <th>파라미터</th><th>타입</th><th>필수</th><th>설명 / 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="param-name">pickdate</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">예약 날짜 (yyyy-MM-dd)</div>
+              <div class="param-example">예) "2026-04-25"</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">secType</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">카테고리 코드 — 30 자유서핑 / 70 레슨 / 90 패키지</div>
+              <div class="param-example">예) "70"</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">itemIdx</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">상품 고유 ID (getList의 data-itemidx)</div>
+              <div class="param-example">예) "27809"</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">HTTP · RAW</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre>POST /bookingone/getDetail HTTP/1.1
+Host: www.wavepark.co.kr
+Content-Type: application/x-www-form-urlencoded
+
+pickdate=2026-04-25&amp;secType=70&amp;itemIdx=27809</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · OkHttp</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">val</span> <span class="var">body</span> = FormBody.Builder()
+    .add(<span class="str">"pickdate"</span>, <span class="str">"2026-04-25"</span>)
+    .add(<span class="str">"secType"</span>,  <span class="str">"70"</span>)
+    .add(<span class="str">"itemIdx"</span>,  <span class="str">"27809"</span>)
+    .build()
+
+<span class="kw">val</span> <span class="var">request</span> = Request.Builder()
+    .url(<span class="str">"https://www.wavepark.co.kr/bookingone/getDetail"</span>)
+    .post(<span class="var">body</span>)
+    .build()
+
+<span class="kw">val</span> <span class="var">html</span> = JSONObject(
+    OkHttpClient().newCall(<span class="var">request</span>).execute().body?.string() ?: <span class="str">""</span>
+).getString(<span class="str">"html"</span>)</pre>
+    </div>
+
+    <h3>응답 구조</h3>
+    <p>getList와 동일하게 <code>{ "html": "..." }</code> 형태. html 필드 안에 예약 모달 전체 마크업이 담깁니다.</p>
+
+    <h3>모달 HTML 구조</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">HTML · MODAL STRUCTURE</span></div>
+      <pre><span class="cmt">&lt;!-- 모달 폼 전체 구조 --&gt;</span>
+&lt;<span class="kw">form</span> id=<span class="str">"modalForm"</span>&gt;
+
+  <span class="cmt">&lt;!-- 요청값 그대로 반영되는 히든 필드 --&gt;</span>
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"pickdate"</span>  value=<span class="str">"2026-04-25"</span> /&gt;
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"secType"</span>   value=<span class="str">"70"</span>         /&gt;
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"itemIdx"</span>   value=<span class="str">"27809"</span>      /&gt;
+
+  <span class="cmt">&lt;!-- ① 상품 정보 --&gt;</span>
+  &lt;<span class="kw">p</span> class=<span class="str">"item-name"</span>&gt;Lv.4 라인업레슨&lt;/<span class="kw">p</span>&gt;
+  &lt;<span class="kw">p</span> class=<span class="str">"item-desc"</span>&gt;&lt;/<span class="kw">p</span>&gt;
+
+  <span class="cmt">&lt;!-- ② 타임슬롯 (선택값은 히든 필드에 저장) --&gt;</span>
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"item_time_0"</span> /&gt;  <span class="cmt">&lt;!-- 선택 시간 --&gt;</span>
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"sch_idx_0"</span>   /&gt;  <span class="cmt">&lt;!-- 스케줄 IDX --&gt;</span>
+  &lt;<span class="kw">button</span> class=<span class="str">"opt-pill btnTimeCheck"</span>
+          data-group=<span class="str">"timeGroup0"</span>
+          data-no=<span class="str">"0"</span>
+          data-pickdatetime=<span class="str">"2026-04-25 10:00:00"</span>
+          data-itemidx=<span class="str">"27809"</span>&gt;
+    10:00 ~ 12:00 &lt;<span class="kw">span</span> class=<span class="str">"opt-cap"</span>&gt;11/15&lt;/<span class="kw">span</span>&gt;
+  &lt;/<span class="kw">button</span>&gt;
+
+  <span class="cmt">&lt;!-- ③ 파도위치·서핑구역 (시간 선택 후 동적 로드) --&gt;</span>
+  &lt;<span class="kw">div</span> id=<span class="str">"waveArea_0"</span>&gt;시간을 선택해주세요.&lt;/<span class="kw">div</span>&gt;
+  &lt;<span class="kw">div</span> id=<span class="str">"zoneArea_0"</span>&gt;시간을 선택해주세요.&lt;/<span class="kw">div</span>&gt;
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"item_wavepos_0"</span>     /&gt;
+  &lt;<span class="kw">input</span> type=<span class="str">"hidden"</span> name=<span class="str">"item_surfsection_0"</span> /&gt;
+
+  <span class="cmt">&lt;!-- ④ 수량 / 액션 버튼 --&gt;</span>
+  &lt;<span class="kw">div</span> id=<span class="str">"qtyNum"</span>&gt;1&lt;/<span class="kw">div</span>&gt;
+  &lt;<span class="kw">button</span> class=<span class="str">"btn cart"</span>&gt;장바구니&lt;/<span class="kw">button</span>&gt;
+  &lt;<span class="kw">button</span> class=<span class="str">"btn pay"</span>&gt;결제하기&lt;/<span class="kw">button</span>&gt;
+
+&lt;/<span class="kw">form</span>&gt;</pre>
+    </div>
+
+    <h3>핵심 추출 필드</h3>
+    <div class="endpoint-card">
+      <div class="attr-grid">
+        <div class="attr-card">
+          <div class="attr-name">.item-name</div>
+          <div class="attr-desc">상품명 텍스트</div>
+          <div class="attr-example">"Lv.4 라인업레슨"</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">button.btnTimeCheck</div>
+          <div class="attr-desc">타임슬롯 버튼 목록 (복수 가능)</div>
+          <div class="attr-example">data-pickdatetime, data-itemidx</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">span.opt-cap</div>
+          <div class="attr-desc">잔여석/정원 — "잔여/정원" 형식</div>
+          <div class="attr-example">"11/15" → 잔여 11, 정원 15</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">waveArea_0 / zoneArea_0</div>
+          <div class="attr-desc">파도위치·서핑구역 (시간 선택 후 별도 로드)</div>
+          <div class="attr-example">초기값: "시간을 선택해주세요."</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warn-box">
+      <span class="icon">&#9888;&#65039;</span>
+      <div class="text">
+        <strong>파도위치·서핑구역은 별도 API 호출</strong>: waveArea / zoneArea 영역은 타임슬롯 선택 후 추가 Ajax 요청으로 채워집니다. getDetail 응답에는 포함되지 않습니다.
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · Jsoup 파싱</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">data class</span> <span class="fn">TimeSlot</span>(
+    <span class="kw">val</span> pickDatetime: String,  <span class="cmt">// "2026-04-25 10:00:00"</span>
+    <span class="kw">val</span> itemIdx: String,
+    <span class="kw">val</span> label: String,         <span class="cmt">// "10:00 ~ 12:00"</span>
+    <span class="kw">val</span> remaining: Int,        <span class="cmt">// 11</span>
+    <span class="kw">val</span> capacity: Int,         <span class="cmt">// 15</span>
+)
+
+<span class="kw">data class</span> <span class="fn">ItemDetail</span>(
+    <span class="kw">val</span> name: String,
+    <span class="kw">val</span> slots: List&lt;TimeSlot&gt;,
+)
+
+<span class="kw">fun</span> <span class="fn">parseDetail</span>(html: String): ItemDetail {
+    <span class="kw">val</span> doc = Jsoup.<span class="fn">parseBodyFragment</span>(html)
+    <span class="kw">val</span> name = doc.<span class="fn">selectFirst</span>(<span class="str">".item-name"</span>)?.text() ?: <span class="str">""</span>
+
+    <span class="kw">val</span> slots = doc.<span class="fn">select</span>(<span class="str">"button.btnTimeCheck"</span>).<span class="fn">map</span> { btn ->
+        <span class="kw">val</span> cap  = btn.<span class="fn">selectFirst</span>(<span class="str">"span.opt-cap"</span>)?.text() ?: <span class="str">"0/0"</span>
+        <span class="kw">val</span> parts = cap.<span class="fn">split</span>(<span class="str">"/"</span>).<span class="fn">map</span> { it.trim().<span class="fn">toIntOrNull</span>() ?: <span class="num">0</span> }
+        TimeSlot(
+            pickDatetime = btn.attr(<span class="str">"data-pickdatetime"</span>),
+            itemIdx      = btn.attr(<span class="str">"data-itemidx"</span>),
+            label        = btn.<span class="fn">ownText</span>().trim(),
+            remaining    = parts.<span class="fn">getOrElse</span>(<span class="num">0</span>) { <span class="num">0</span> },
+            capacity     = parts.<span class="fn">getOrElse</span>(<span class="num">1</span>) { <span class="num">0</span> },
+        )
+    }
+    <span class="kw">return</span> ItemDetail(name, slots)
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">OUTPUT · secType 70 (레슨) — 슬롯 1개</span></div>
+      <pre>ItemDetail(
+  name  = <span class="str">"Lv.4 라인업레슨"</span>,
+  slots = [
+    TimeSlot(pickDatetime=<span class="str">"2026-04-25 10:00:00"</span>, label=<span class="str">"10:00 ~ 12:00"</span>, remaining=<span class="num">11</span>, capacity=<span class="num">15</span>)
+  ]
+)</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">OUTPUT · secType 30 (자유서핑) — 슬롯 복수</span></div>
+      <pre>ItemDetail(
+  name  = <span class="str">"리프자유서핑(중급)"</span>,
+  slots = [
+    TimeSlot(pickDatetime=<span class="str">"2026-04-25 12:00:00"</span>, label=<span class="str">"12:00 ~ 13:00"</span>, remaining=<span class="num">25</span>, capacity=<span class="num">50</span>),
+    TimeSlot(pickDatetime=<span class="str">"2026-04-25 14:00:00"</span>, label=<span class="str">"14:00 ~ 15:00"</span>, remaining=<span class="num">25</span>, capacity=<span class="num">50</span>),
+    TimeSlot(pickDatetime=<span class="str">"2026-04-25 17:00:00"</span>, label=<span class="str">"17:00 ~ 18:00"</span>, remaining=<span class="num">42</span>, capacity=<span class="num">50</span>),
+  ]
+)</pre>
+    </div>
+
+    <!-- secType별 차이점 -->
+    <h3>secType별 응답 차이점</h3>
+    <div class="endpoint-card">
+      <table class="param-table">
+        <thead>
+          <tr>
+            <th>secType</th>
+            <th>카테고리</th>
+            <th>타임슬롯 수</th>
+            <th>정원(capacity)</th>
+            <th>슬롯 시간 단위</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="param-name">30</span></td>
+            <td><span class="param-desc">자유서핑</span></td>
+            <td><span class="param-desc">복수 (3개+)</span></td>
+            <td><span class="param-desc">50명</span></td>
+            <td><span class="param-example">1시간 단위 (12:00~13:00)</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">70</span></td>
+            <td><span class="param-desc">레슨</span></td>
+            <td><span class="param-desc">1개 (확인됨)</span></td>
+            <td><span class="param-desc">15명</span></td>
+            <td><span class="param-example">2시간 단위 (10:00~12:00)</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">90</span></td>
+            <td><span class="param-desc">패키지</span></td>
+            <td><span class="param-desc">미확인</span></td>
+            <td><span class="param-desc">미확인</span></td>
+            <td><span class="param-example">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- itemIdx 전체 표 -->
+    <h3>itemIdx 전체 목록</h3>
+    <p>getList 응답에서 확인된 전체 상품 코드입니다.</p>
+    <div class="endpoint-card">
+      <table class="param-table">
+        <thead>
+          <tr>
+            <th>itemIdx</th>
+            <th>secType</th>
+            <th>유형</th>
+            <th>상품명</th>
+            <th>가격</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="param-name">12</span></td>
+            <td><span class="param-type">30</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">베이자유서핑</span></td>
+            <td><span class="param-example">80,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">13</span></td>
+            <td><span class="param-type">30</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">리프자유서핑(초급)</span></td>
+            <td><span class="param-example">80,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">14</span></td>
+            <td><span class="param-type">30</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">리프자유서핑(중급)</span></td>
+            <td><span class="param-example">80,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">18</span></td>
+            <td><span class="param-type">30</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">리프자유서핑(상급)</span></td>
+            <td><span class="param-example">110,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">27808</span></td>
+            <td><span class="param-type">70</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">Lv.5 턴기초레슨</span></td>
+            <td><span class="param-example">130,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">27809</span></td>
+            <td><span class="param-type">70</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">Lv.4 라인업레슨</span></td>
+            <td><span class="param-example">130,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">27810</span></td>
+            <td><span class="param-type">70</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">Lv.3 사이드라이딩레슨</span></td>
+            <td><span class="param-example">119,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">27811</span></td>
+            <td><span class="param-type">70</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">Lv.2 패들&amp;테이크오프 레슨</span></td>
+            <td><span class="param-example">119,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">27812</span></td>
+            <td><span class="param-type">70</span></td>
+            <td><span class="tag tag-단품">단품</span></td>
+            <td><span class="param-desc">Lv.1 서핑입문레슨</span></td>
+            <td><span class="param-example">119,000원~</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">30899</span></td>
+            <td><span class="param-type">90</span></td>
+            <td><span class="tag tag-패키지">패키지</span></td>
+            <td><span class="param-desc">[주말] 리프자유서핑(초급) 2시간</span></td>
+            <td><span class="param-example">110,000원</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">30900</span></td>
+            <td><span class="param-type">90</span></td>
+            <td><span class="tag tag-패키지">패키지</span></td>
+            <td><span class="param-desc">[주말] 리프자유서핑(중급) 2시간</span></td>
+            <td><span class="param-example">125,000원</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">30901</span></td>
+            <td><span class="param-type">90</span></td>
+            <td><span class="tag tag-패키지">패키지</span></td>
+            <td><span class="param-desc">[주말] 리프자유서핑(초급+중급) 2시간</span></td>
+            <td><span class="param-example">115,000원</span></td>
+          </tr>
+          <tr>
+            <td><span class="param-name">30902</span></td>
+            <td><span class="param-type">90</span></td>
+            <td><span class="tag tag-패키지">패키지</span></td>
+            <td><span class="param-desc">[주말] 리프자유서핑(중급+상급) 2시간</span></td>
+            <td><span class="param-example">145,000원</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <span class="icon">&#128161;</span>
+      <div class="text">
+        <strong>itemIdx 패턴 관찰</strong>: 자유서핑(30)은 낮은 번호(12~18), 레슨(70)은 27808~27812, 패키지(90)는 30899~30902로 묶임. 시즌마다 패키지 itemIdx는 새로 발급되는 것으로 추정 — getList로 매번 최신 idx를 확인하는 것을 권장.
+      </div>
+    </div>
+  </section>
+
+  <!-- Endpoint 3: getWaveZone -->
+  <section id="get-wave-zone">
+    <div class="section-tag">ENDPOINT 03</div>
+    <h2>파도위치 · 서핑구역 조회</h2>
+    <p>타임슬롯 선택 후 호출되는 API입니다. 파도위치(좌측/우측)와 각 위치별 서핑구역 버튼 HTML을 반환합니다. getDetail의 <code>waveArea_0</code> / <code>zoneArea_0</code> 영역을 이 응답으로 채웁니다.</p>
+
+    <div class="info-box">
+      <span class="icon">&#128260;</span>
+      <div class="text">
+        <strong>호출 순서</strong>: getList → getDetail → <strong>getWaveZone</strong> (타임슬롯 클릭 시)<br>
+        타임슬롯 버튼의 <code>data-pickdatetime</code>과 <code>data-itemidx</code>를 그대로 사용합니다.
+      </div>
+    </div>
+
+    <div class="endpoint-card">
+      <div class="endpoint-header">
+        <span class="method-badge method-post">POST</span>
+        <span class="endpoint-url">/bookingone/getWaveZone</span>
+      </div>
+
+      <h3 style="padding: 16px 20px 0; font-size:13px; color: var(--text-muted); font-family: var(--mono); font-weight:600; letter-spacing:1px;">REQUEST</h3>
+
+      <div class="info-box" style="margin: 8px 20px;">
+        <span class="icon">&#128203;</span>
+        <div class="text">Content-Type: <strong>application/x-www-form-urlencoded</strong></div>
+      </div>
+
+      <table class="param-table">
+        <thead>
+          <tr><th>파라미터</th><th>타입</th><th>필수</th><th>설명 / 예시</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="param-name">no</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">상품 인덱스 순번 — 모달 내 여러 상품이 있을 때 구분용. 단일 상품이면 항상 <code>"0"</code></div>
+              <div class="param-example">예) "0"</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">itemIdx</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">상품 고유 ID — getDetail 요청과 동일한 값</div>
+              <div class="param-example">예) "14"</div>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="param-name">pickdatetime</span></td>
+            <td><span class="param-type">string</span></td>
+            <td><span class="param-required">required</span></td>
+            <td>
+              <div class="param-desc">타임슬롯 버튼의 <code>data-pickdatetime</code> 값 그대로 사용</div>
+              <div class="param-example">예) "2026-04-25 12:00:00"</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">HTTP · RAW</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre>POST /bookingone/getWaveZone HTTP/1.1
+Host: www.wavepark.co.kr
+Content-Type: application/x-www-form-urlencoded
+
+no=0&amp;itemIdx=14&amp;pickdatetime=2026-04-25+12%3A00%3A00</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · OkHttp</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="cmt">// slot: TimeSlot (getDetail 파싱 결과)</span>
+<span class="kw">val</span> <span class="var">body</span> = FormBody.Builder()
+    .add(<span class="str">"no"</span>,           <span class="str">"0"</span>)
+    .add(<span class="str">"itemIdx"</span>,      slot.itemIdx)
+    .add(<span class="str">"pickdatetime"</span>, slot.pickDatetime)   <span class="cmt">// "2026-04-25 12:00:00"</span>
+    .build()
+
+<span class="kw">val</span> <span class="var">request</span> = Request.Builder()
+    .url(<span class="str">"https://www.wavepark.co.kr/bookingone/getWaveZone"</span>)
+    .post(<span class="var">body</span>)
+    .build()
+
+<span class="kw">val</span> <span class="var">json</span> = JSONObject(
+    OkHttpClient().newCall(<span class="var">request</span>).execute().body?.string() ?: <span class="str">""</span>
+)</pre>
+    </div>
+
+    <!-- Response -->
+    <h3>응답 구조</h3>
+    <div class="endpoint-card">
+      <div class="response-section">
+        <div class="field-row">
+          <span class="field-key">waveHtml</span>
+          <div class="field-val">
+            <span><span class="param-type">string (HTML)</span></span>
+            <span class="desc">파도위치 선택 버튼 목록. <code>btnWaveCheck</code> 버튼의 연속. 각 버튼이 좌측/우측 구역을 나타냄</span>
+          </div>
+        </div>
+        <div class="field-row">
+          <span class="field-key">zoneHtml</span>
+          <div class="field-val">
+            <span><span class="param-type">string (HTML)</span></span>
+            <span class="desc">서핑구역 버튼 전체 목록. 파도위치 선택 전엔 모두 <code>display:none</code>. 파도위치 클릭 시 해당 <code>data-schidx</code>와 일치하는 버튼만 노출</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HTML Structure -->
+    <h3>응답 HTML 구조</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">HTML · waveHtml 구조</span></div>
+      <pre><span class="cmt">&lt;!-- 파도위치 버튼: 좌측 / 우측 --&gt;</span>
+&lt;<span class="kw">button</span> class=<span class="str">"opt-pill btnWaveCheck"</span>
+        data-group=<span class="str">"waveGroup0"</span>
+        data-no=<span class="str">"0"</span>
+        data-schidx=<span class="str">"44997"</span>&gt;좌측&lt;/<span class="kw">button</span>&gt;
+
+&lt;<span class="kw">button</span> class=<span class="str">"opt-pill btnWaveCheck"</span>
+        data-group=<span class="str">"waveGroup0"</span>
+        data-no=<span class="str">"0"</span>
+        data-schidx=<span class="str">"44996"</span>&gt;우측&lt;/<span class="kw">button</span>&gt;</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">HTML · zoneHtml 구조</span></div>
+      <pre><span class="cmt">&lt;!-- 서핑구역 버튼: 파도위치 선택 전엔 display:none --&gt;</span>
+&lt;<span class="kw">button</span> class=<span class="str">"opt-pill btnWaveZoneCheck btnZone0 btnZone0_44997"</span>
+        style=<span class="str">"display:none"</span>
+        data-group=<span class="str">"zoneGroup0"</span>
+        data-no=<span class="str">"0"</span>
+        data-itemtime=<span class="str">"2026-04-25 12:00:00"</span>
+        data-schidx=<span class="str">"44997"</span>    <span class="cmt">&lt;!-- 좌측 schidx와 연결 --&gt;</span>
+        data-wave=<span class="str">"1"</span>           <span class="cmt">&lt;!-- 파도위치 번호 (좌=1, 우=2 추정) --&gt;</span>
+        data-zone=<span class="str">"20"</span>          <span class="cmt">&lt;!-- 구역 코드 --&gt;</span>
+        data-maxcnt=<span class="str">"20"</span>&gt;       <span class="cmt">&lt;!-- 해당 구역 최대 인원 --&gt;</span>
+  중급리프
+&lt;/<span class="kw">button</span>&gt;
+
+&lt;<span class="kw">button</span> class=<span class="str">"opt-pill btnWaveZoneCheck btnZone0 btnZone0_44996"</span>
+        style=<span class="str">"display:none"</span>
+        data-schidx=<span class="str">"44996"</span>    <span class="cmt">&lt;!-- 우측 schidx와 연결 --&gt;</span>
+        data-wave=<span class="str">"2"</span>
+        data-zone=<span class="str">"20"</span>
+        data-maxcnt=<span class="str">"4"</span>&gt;        <span class="cmt">&lt;!-- 우측은 정원 4명 (좌측 20명과 다름!) --&gt;</span>
+  중급리프
+&lt;/<span class="kw">button</span>&gt;
+
+<span class="cmt">&lt;!-- 파도위치 미선택 안내 문구 --&gt;</span>
+&lt;<span class="kw">div</span> class=<span class="str">"btnZoneEx0"</span>&gt;파도 위치를 선택해주세요.&lt;/<span class="kw">div</span>&gt;</pre>
+    </div>
+
+    <!-- Key fields -->
+    <h3>핵심 추출 필드</h3>
+    <div class="endpoint-card">
+      <div class="attr-grid">
+        <div class="attr-card">
+          <div class="attr-name">data-schidx</div>
+          <div class="attr-desc">스케줄 고유 ID — waveHtml과 zoneHtml을 연결하는 키. 파도위치 버튼의 schidx = 해당 구역 버튼의 schidx</div>
+          <div class="attr-example">좌측: 44997 / 우측: 44996</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">data-wave</div>
+          <div class="attr-desc">파도위치 번호 (추정: 좌=1, 우=2)</div>
+          <div class="attr-example">"1" → 좌측, "2" → 우측</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">data-maxcnt</div>
+          <div class="attr-desc">해당 구역 최대 인원 — 좌/우 정원이 다를 수 있음</div>
+          <div class="attr-example">좌측: 20명, 우측: 4명</div>
+        </div>
+        <div class="attr-card">
+          <div class="attr-name">data-zone</div>
+          <div class="attr-desc">구역 코드</div>
+          <div class="attr-example">"20" (중급리프)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warn-box">
+      <span class="icon">&#9888;&#65039;</span>
+      <div class="text">
+        <strong>좌/우 정원이 다릅니다</strong>: 같은 타임슬롯이라도 좌측(maxcnt=20)과 우측(maxcnt=4)의 수용 인원이 다릅니다. 잔여석 표시 시 구역별로 따로 처리해야 합니다. 현재 응답에 현재 예약된 인원(점유수)은 포함되지 않으므로 별도 확인이 필요할 수 있습니다.
+      </div>
+    </div>
+
+    <!-- Parsing Code -->
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · Jsoup 파싱</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="kw">data class</span> <span class="fn">WavePosition</span>(
+    <span class="kw">val</span> schIdx: String,    <span class="cmt">// "44997"</span>
+    <span class="kw">val</span> label: String,     <span class="cmt">// "좌측" | "우측"</span>
+)
+
+<span class="kw">data class</span> <span class="fn">SurfZone</span>(
+    <span class="kw">val</span> schIdx: String,    <span class="cmt">// 연결된 파도위치 schIdx</span>
+    <span class="kw">val</span> wave: String,      <span class="cmt">// "1"=좌측, "2"=우측 (추정)</span>
+    <span class="kw">val</span> zone: String,      <span class="cmt">// 구역 코드 "20"</span>
+    <span class="kw">val</span> maxCnt: Int,       <span class="cmt">// 최대 정원</span>
+    <span class="kw">val</span> itemTime: String,  <span class="cmt">// "2026-04-25 12:00:00"</span>
+    <span class="kw">val</span> label: String,     <span class="cmt">// "중급리프"</span>
+)
+
+<span class="kw">data class</span> <span class="fn">WaveZoneResult</span>(
+    <span class="kw">val</span> positions: List&lt;WavePosition&gt;,
+    <span class="kw">val</span> zones: List&lt;SurfZone&gt;,
+)
+
+<span class="kw">fun</span> <span class="fn">parseWaveZone</span>(json: JSONObject): WaveZoneResult {
+    <span class="kw">val</span> waveDoc = Jsoup.<span class="fn">parseBodyFragment</span>(json.getString(<span class="str">"waveHtml"</span>))
+    <span class="kw">val</span> zoneDoc = Jsoup.<span class="fn">parseBodyFragment</span>(json.getString(<span class="str">"zoneHtml"</span>))
+
+    <span class="kw">val</span> positions = waveDoc.<span class="fn">select</span>(<span class="str">"button.btnWaveCheck"</span>).<span class="fn">map</span> {
+        WavePosition(
+            schIdx = it.attr(<span class="str">"data-schidx"</span>),
+            label  = it.text(),
+        )
+    }
+
+    <span class="kw">val</span> zones = zoneDoc.<span class="fn">select</span>(<span class="str">"button.btnWaveZoneCheck"</span>).<span class="fn">map</span> {
+        SurfZone(
+            schIdx   = it.attr(<span class="str">"data-schidx"</span>),
+            wave     = it.attr(<span class="str">"data-wave"</span>),
+            zone     = it.attr(<span class="str">"data-zone"</span>),
+            maxCnt   = it.attr(<span class="str">"data-maxcnt"</span>).<span class="fn">toIntOrNull</span>() ?: <span class="num">0</span>,
+            itemTime = it.attr(<span class="str">"data-itemtime"</span>),
+            label    = it.text(),
+        )
+    }
+
+    <span class="kw">return</span> WaveZoneResult(positions, zones)
+}
+
+<span class="cmt">// 파도위치 선택 후 해당 구역만 필터링</span>
+<span class="kw">fun</span> WaveZoneResult.<span class="fn">zonesFor</span>(schIdx: String) =
+    zones.<span class="fn">filter</span> { it.schIdx == schIdx }</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">OUTPUT · 파싱 결과 예시</span></div>
+      <pre>WaveZoneResult(
+  positions = [
+    WavePosition(schIdx=<span class="str">"44997"</span>, label=<span class="str">"좌측"</span>),
+    WavePosition(schIdx=<span class="str">"44996"</span>, label=<span class="str">"우측"</span>),
+  ],
+  zones = [
+    SurfZone(schIdx=<span class="str">"44997"</span>, wave=<span class="str">"1"</span>, zone=<span class="str">"20"</span>, maxCnt=<span class="num">20</span>, label=<span class="str">"중급리프"</span>),
+    SurfZone(schIdx=<span class="str">"44996"</span>, wave=<span class="str">"2"</span>, zone=<span class="str">"20"</span>, maxCnt=<span class="num"> 4</span>, label=<span class="str">"중급리프"</span>),
+  ]
+)
+
+<span class="cmt">// "좌측" 선택 시 → schIdx "44997" 기준으로 필터</span>
+zonesFor(<span class="str">"44997"</span>) → [SurfZone(label=<span class="str">"중급리프"</span>, maxCnt=<span class="num">20</span>)]</pre>
+    </div>
+
+    <!-- Full Flow -->
+    <h3>전체 3단계 호출 흐름</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">FLOW · getList → getDetail → getWaveZone</span></div>
+      <pre><span class="cmt">// 1단계: 날짜별 상품 목록</span>
+<span class="kw">val</span> items = <span class="fn">fetchItemList</span>(date = <span class="str">"2026-04-25"</span>)
+<span class="cmt">//  → [WaveparkItem(itemIdx="14", secType="30", name="리프자유서핑(중급)"), ...]</span>
+
+<span class="cmt">// 2단계: 상품 상세 (타임슬롯 목록)</span>
+<span class="kw">val</span> detail = <span class="fn">fetchDetail</span>(pickdate=<span class="str">"2026-04-25"</span>, secType=<span class="str">"30"</span>, itemIdx=<span class="str">"14"</span>)
+<span class="cmt">//  → ItemDetail(slots=[</span>
+<span class="cmt">//       TimeSlot(label="12:00~13:00", remaining=25, capacity=50),</span>
+<span class="cmt">//       TimeSlot(label="14:00~15:00", remaining=25, capacity=50), ...])</span>
+
+<span class="cmt">// 3단계: 타임슬롯 선택 후 파도위치·구역</span>
+<span class="kw">val</span> slot = detail.slots[<span class="num">0</span>]   <span class="cmt">// "2026-04-25 12:00:00"</span>
+<span class="kw">val</span> waveZone = <span class="fn">fetchWaveZone</span>(no=<span class="str">"0"</span>, itemIdx=slot.itemIdx, pickdatetime=slot.pickDatetime)
+<span class="cmt">//  → WaveZoneResult(</span>
+<span class="cmt">//       positions=[WavePosition("44997","좌측"), WavePosition("44996","우측")],</span>
+<span class="cmt">//       zones=[SurfZone(schIdx="44997", maxCnt=20), SurfZone(schIdx="44996", maxCnt=4)])</span>
+
+<span class="cmt">// 4단계: 파도위치 선택 → 구역 필터링</span>
+<span class="kw">val</span> leftZones = waveZone.<span class="fn">zonesFor</span>(<span class="str">"44997"</span>)  <span class="cmt">// 좌측 선택</span></pre>
+    </div>
+  </section>
+
+  <!-- Sample Code (Full) -->
+  <section id="sample-code">
+    <div class="section-tag">SAMPLE</div>
+    <h2>전체 호출 예제</h2>
+    <p>요청부터 파싱까지 한 번에 처리하는 예제입니다.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">KOTLIN · 전체 플로우</span>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="cmt">// Coroutine + OkHttp + Jsoup</span>
+<span class="kw">suspend fun</span> <span class="fn">fetchWaveparkItems</span>(date: LocalDate): List&lt;WaveparkItem&gt; {
+    <span class="kw">return</span> <span class="fn">withContext</span>(Dispatchers.IO) {
+        <span class="kw">val</span> body = FormBody.Builder()
+            .add(<span class="str">"yy"</span>,        date.year.toString())
+            .add(<span class="str">"mm"</span>,        date.monthValue.toString())
+            .add(<span class="str">"selectYmd"</span>, date.toString())   <span class="cmt">// yyyy-MM-dd</span>
+            .build()
+
+        <span class="kw">val</span> request = Request.Builder()
+            .url(<span class="str">"https://www.wavepark.co.kr/bookingone/getList"</span>)
+            .post(body)
+            .build()
+
+        <span class="kw">val</span> responseJson = OkHttpClient()
+            .newCall(request).execute()
+            .body?.string() ?: <span class="kw">return</span>@withContext emptyList()
+
+        <span class="kw">val</span> html = JSONObject(responseJson).getString(<span class="str">"html"</span>)
+        <span class="fn">parseItems</span>(html)
+    }
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">OUTPUT · 파싱 결과 예시</span>
+      </div>
+      <pre>[
+  { <span class="key">pickDate</span>: <span class="str">"2026-04-26"</span>, <span class="key">itemIdx</span>: <span class="str">"30902"</span>, <span class="key">secType</span>: <span class="str">"90"</span>,
+    <span class="key">badgeType</span>: <span class="str">"패키지"</span>, <span class="key">name</span>: <span class="str">"[주말] 리프자유서핑(중급+상급) 2시간"</span>, <span class="key">price</span>: <span class="str">"145,000원"</span> },
+  { <span class="key">pickDate</span>: <span class="str">"2026-04-26"</span>, <span class="key">itemIdx</span>: <span class="str">"27812"</span>, <span class="key">secType</span>: <span class="str">"70"</span>,
+    <span class="key">badgeType</span>: <span class="str">"단품"</span>,  <span class="key">name</span>: <span class="str">"Lv.1 서핑입문레슨"</span>,             <span class="key">price</span>: <span class="str">"119,000원 ~"</span> },
+  { <span class="key">pickDate</span>: <span class="str">"2026-04-26"</span>, <span class="key">itemIdx</span>: <span class="str">"12"</span>,    <span class="key">secType</span>: <span class="str">"30"</span>,
+    <span class="key">badgeType</span>: <span class="str">"단품"</span>,  <span class="key">name</span>: <span class="str">"베이자유서핑"</span>,                <span class="key">price</span>: <span class="str">"80,000원 ~"</span> },
+  <span class="cmt">// ... 총 13개 상품</span>
+]</pre>
+    </div>
+
+    <div class="info-box">
+      <span class="icon">💡</span>
+      <div class="text">
+        <strong>단품 가격의 "~" 처리</strong>: 단품 상품의 price 필드는 <code>"80,000원 ~"</code> 형태로 "~"가 붙어옵니다. 숫자만 필요하다면 <code>replace("[^0-9]", "")</code> 로 처리하세요.
+      </div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<script>
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'copied!';
+    btn.style.color = 'var(--success)';
+    btn.style.borderColor = 'var(--success)';
+    setTimeout(() => {
+      btn.textContent = 'copy';
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }, 1500);
+  });
+}
+
+// Sidebar active state
+document.querySelectorAll('nav a').forEach(link => {
+  link.addEventListener('click', () => {
+    document.querySelectorAll('nav a').forEach(l => l.classList.remove('active'));
+    link.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>
