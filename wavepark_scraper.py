@@ -146,18 +146,23 @@ def load_seasons() -> list[Season]:
         _create_default_seasons_file()
     with open(SEASONS_FILE, encoding="utf-8") as f:
         raw = json.load(f)
-    return sorted([
-        Season(
+    seasons = []
+    for s in raw["seasons"]:
+        ts = s.get("time_schedule", {})
+        # 구형 포맷 {item_idx: ["HH:MM",...]} → 신형 {item_idx: {"weekday":[], "weekend":[]}}
+        # 신형 판별: 값이 dict이면 신형, list이면 구형 → 구형은 초기화
+        if ts and not isinstance(next(iter(ts.values())), dict):
+            ts = {}
+        seasons.append(Season(
             number        = s["number"],
             start         = date.fromisoformat(s["start"]),
             end           = date.fromisoformat(s["end"]),
             label         = s["label"],
             wave_schedule = s.get("wave_schedule", {}),
             item_catalog  = s.get("item_catalog", []),
-            time_schedule = s.get("time_schedule", {}),
-        )
-        for s in raw["seasons"]
-    ], key=lambda s: s.number)
+            time_schedule = ts,
+        ))
+    return sorted(seasons, key=lambda s: s.number)
 
 
 def _save_item_catalog(season: Season, items: list) -> None:
@@ -185,10 +190,12 @@ def _save_item_catalog(season: Season, items: list) -> None:
     log.info(f"[캐시] 시즌 {season.number} 상품 목록 저장 ({len(catalog)}개) → wavepark_seasons.json")
 
 
-def _save_time_schedule(season: Season, schedule: dict[str, list[str]]) -> None:
-    """getDetail에서 추출한 시간표를 seasons JSON에 캐시 저장 (최초 1회)"""
-    season.time_schedule = schedule   # 즉시 갱신 → 병렬 tasks 중복 저장 방지
-
+def _save_time_schedule(season: Season, schedule: dict) -> None:
+    """
+    시간표를 seasons JSON에 저장.
+    포맷: {item_idx: {"weekday": ["HH:MM",...], "weekend": ["HH:MM",...]}}
+    in-memory 업데이트는 호출 전에 완료되어야 함 (병렬 중복 저장 방지).
+    """
     with open(SEASONS_FILE, encoding="utf-8") as f:
         raw = json.load(f)
     for s in raw["seasons"]:
@@ -198,10 +205,11 @@ def _save_time_schedule(season: Season, schedule: dict[str, list[str]]) -> None:
     with open(SEASONS_FILE, "w", encoding="utf-8") as f:
         json.dump(raw, f, ensure_ascii=False, indent=2)
 
-    total = sum(len(v) for v in schedule.values())
+    items = len(schedule)
+    day_types = {dt for v in schedule.values() for dt in v}
     log.info(
         f"[캐시] 시즌 {season.number} 시간표 저장 "
-        f"({len(schedule)}개 상품, {total}개 시간대) → wavepark_seasons.json"
+        f"({items}개 상품, {sorted(day_types)}) → wavepark_seasons.json"
     )
 
 
@@ -575,28 +583,50 @@ async def fetch_item(
     target_types:   set[str],
     available_only: bool,
 ) -> list[ZoneSlot]:
-    """상품 1개 → getDetail → 슬롯 병렬 처리"""
+    """상품 1개 → (time_schedule 캐시 있으면 getDetail 생략) → 슬롯별 getWaveZone 병렬 처리"""
     if item.sec_type.value not in target_types:
         return []
 
-    try:
-        detail = await client.get_detail(item)
-    except Exception as e:
-        log.warning(f"  getDetail 실패 [{item.name} / {item.pick_date}]: {repr(e)}")
-        return []
+    day_type     = "weekend" if date.fromisoformat(item.pick_date).weekday() >= 5 else "weekday"
+    cached_times = season.time_schedule.get(item.item_idx, {}).get(day_type, [])
 
-    if not detail.slots:
-        return []
+    if cached_times:
+        # ── 캐시 HIT: getDetail 생략 ──
+        slots = [
+            TimeSlot(
+                pick_datetime = f"{item.pick_date} {t}:00",
+                item_idx      = item.item_idx,
+                label         = t,
+                remaining     = 0,
+                capacity      = 0,
+            )
+            for t in cached_times
+        ]
+        log.debug(
+            f"  [{item.sec_type.value}] {item.name} (idx={item.item_idx})"
+            f"  슬롯 {len(slots)}개 [캐시/{day_type}]"
+        )
+    else:
+        # ── 캐시 MISS: getDetail 호출 ──
+        try:
+            detail = await client.get_detail(item)
+        except Exception as e:
+            log.warning(f"  getDetail 실패 [{item.name} / {item.pick_date}]: {repr(e)}")
+            return []
 
-    log.info(
-        f"  [{item.sec_type.value}] {item.name} (idx={item.item_idx})"
-        f"  슬롯 {len(detail.slots)}개"
-    )
+        if not detail.slots:
+            return []
 
-    # 슬롯 병렬 처리
+        slots = detail.slots
+        log.info(
+            f"  [{item.sec_type.value}] {item.name} (idx={item.item_idx})"
+            f"  슬롯 {len(slots)}개 [{day_type}]"
+        )
+
+    # 슬롯별 getWaveZone 병렬 처리
     tasks = [
         fetch_slot(client, season, item, slot, available_only)
-        for slot in detail.slots
+        for slot in slots
     ]
     nested = await asyncio.gather(*tasks, return_exceptions=False)
     return [entry for sub in nested for entry in sub]
@@ -656,13 +686,23 @@ async def fetch_date(
     nested = await asyncio.gather(*tasks, return_exceptions=False)
     results = [entry for sub in nested for entry in sub]
 
-    # getDetail 시간표를 season.json에 최초 1회 캐시 저장
-    if results and not season.time_schedule:
-        from collections import defaultdict as _dd
-        sched: dict[str, set] = _dd(set)
-        for entry in results:
-            sched[entry.item_idx].add(entry.pick_datetime[11:16])  # "HH:MM"
-        _save_time_schedule(season, {k: sorted(v) for k, v in sched.items()})
+    # time_schedule 캐시 저장 (평일/주말 구분, 미캐시 day_type만 저장)
+    if results:
+        day_type  = "weekend" if d.weekday() >= 5 else "weekday"
+        item_idxs = {e.item_idx for e in results}
+        needs_save = any(
+            day_type not in season.time_schedule.get(idx, {})
+            for idx in item_idxs
+        )
+        if needs_save:
+            # 기존 time_schedule에 병합
+            merged: dict = {k: dict(v) for k, v in season.time_schedule.items()}
+            for idx in item_idxs:
+                times = sorted({e.pick_datetime[11:16] for e in results if e.item_idx == idx})
+                merged.setdefault(idx, {})[day_type] = times
+                # in-memory 즉시 반영 → 병렬 coroutine 중복 저장 방지
+                season.time_schedule.setdefault(idx, {})[day_type] = times
+            _save_time_schedule(season, merged)
 
     if not results:
         log.info(f"  → 데이터 없음")
