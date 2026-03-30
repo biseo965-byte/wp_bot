@@ -148,19 +148,19 @@ class SurfZone:
         data-schidx    → sch_idx   (WavePosition.sch_idx 와 연결)
         data-wave      → wave      ("1"=좌측 추정, "2"=우측 추정)
         data-zone      → zone      (구역 코드)
-        data-maxcnt    → max_cnt   (해당 구역 최대 정원)
+        data-maxcnt    → rem_cnt   (해당 구역 현재 잔여 좌석 — 실시간)
         data-itemtime  → item_time
         button.text    → label
-    
+
     주의:
-        같은 타임슬롯이라도 좌/우 max_cnt가 다름
-        ex) 좌측 20명, 우측 4명
-        현재 점유 인원은 응답에 미포함 → max_cnt 기준으로만 판단 가능
+        같은 타임슬롯이라도 좌/우 rem_cnt가 다름
+        ex) 좌측 잔여 20석, 우측 잔여 4석
+        고정 정원은 API 미제공 → ITEM_CAPACITY 상수 사용
     """
     sch_idx:   str   # "44997"
     wave:      str   # "1" | "2"  (좌=1, 우=2 추정)
     zone:      str   # "20"
-    max_cnt:   int   # 최대 정원
+    rem_cnt:   int   # 현재 잔여 좌석 (data-maxcnt)
     item_time: str   # "2026-04-25 12:00:00"
     label:     str   # "중급리프"
 
@@ -232,6 +232,6 @@ class BookingSelection:
             f"시간    : {self.slot.label if self.slot else '-'}",
             f"잔여석  : {self.slot.remaining}/{self.slot.capacity if self.slot else '-'}",
             f"파도위치: {self.position.label if self.position else '-'}",
-            f"서핑구역: {self.zone.label if self.zone else '-'} (최대 {self.zone.max_cnt}명)" if self.zone else "서핑구역: -",
+            f"서핑구역: {self.zone.label if self.zone else '-'} (잔여 {self.zone.rem_cnt}석)" if self.zone else "서핑구역: -",
         ]
         return "\n".join(parts)
