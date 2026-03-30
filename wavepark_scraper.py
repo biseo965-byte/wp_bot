@@ -27,11 +27,20 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import time
-from dataclasses import asdict, dataclass
-from datetime import date, timedelta
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+# .env 파일 자동 로드 (python-dotenv 설치 시)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -90,10 +99,18 @@ log = logging.getLogger("wavepark")
 
 @dataclass
 class Season:
-    number: int
-    start:  date
-    end:    date
-    label:  str
+    number:        int
+    start:         date
+    end:           date
+    label:         str
+    wave_schedule: dict = field(default_factory=dict)  # {"weekday": {"09:00": ["M1","M2"], ...}, "weekend": {...}}
+
+    def get_wave_tags(self, pick_date: str, pick_datetime: str) -> list[str]:
+        """날짜(평일/주말)와 시간으로 wave_tags 반환. 매핑 없으면 빈 리스트."""
+        from datetime import date as _date
+        day_type   = "weekend" if _date.fromisoformat(pick_date).weekday() >= 5 else "weekday"
+        time_str   = pick_datetime[11:16]   # "2026-04-26 12:00:00" → "12:00"
+        return self.wave_schedule.get(day_type, {}).get(time_str, [])
 
     @property
     def is_active(self) -> bool:
@@ -119,10 +136,11 @@ def load_seasons() -> list[Season]:
         raw = json.load(f)
     return sorted([
         Season(
-            number = s["number"],
-            start  = date.fromisoformat(s["start"]),
-            end    = date.fromisoformat(s["end"]),
-            label  = s["label"],
+            number        = s["number"],
+            start         = date.fromisoformat(s["start"]),
+            end           = date.fromisoformat(s["end"]),
+            label         = s["label"],
+            wave_schedule = s.get("wave_schedule", {}),
         )
         for s in raw["seasons"]
     ], key=lambda s: s.number)
@@ -267,6 +285,7 @@ class ZoneSlot:
     zone_code:      str
     zone_label:     str
     zone_max_cnt:   int
+    wave_tags:      list = field(default_factory=list)  # ["M1","M2"] — seasons.json 매핑
 
     @property
     def available(self) -> bool:
@@ -413,6 +432,7 @@ def _make_zone_slot(
         zone_code      = zone.zone    if zone else "",
         zone_label     = zone.label   if zone else "",
         zone_max_cnt   = zone.max_cnt if zone else 0,
+        wave_tags      = season.get_wave_tags(item.pick_date, slot.pick_datetime),
     )
 
 
@@ -651,6 +671,130 @@ def save_json(results: list[ZoneSlot], path: str) -> None:
     log.info(f"JSON 저장: {path}  ({len(results)}개)")
 
 
+# ──────────────────────────────────────────────
+# Supabase upsert
+# ──────────────────────────────────────────────
+
+def _difficulty_from_name(item_name: str) -> str:
+    """상품명 → 난이도 레이블 (sessions.difficulty 컬럼)"""
+    for kw in ("초급", "중급", "상급"):
+        if kw in item_name:
+            return kw
+    return item_name
+
+
+def _build_sessions_rows(results: list[ZoneSlot], scraped_at: str) -> list[dict]:
+    """
+    zone_slots 리스트를 프론트엔드 sessions 테이블 rows로 집계합니다.
+
+    집계 키: (pick_date, pick_datetime, item_idx)
+    좌/우 잔여석: API에서 per-side 잔여석을 제공하지 않으므로
+                 좌/우 zone_max_cnt 비율로 slot_remaining을 배분합니다.
+    """
+    groups: dict[tuple, list[ZoneSlot]] = defaultdict(list)
+    for r in results:
+        groups[(r.pick_date, r.pick_datetime, r.item_idx)].append(r)
+
+    rows: list[dict] = []
+    for (pick_date, pick_datetime, item_idx), slots in groups.items():
+        sample      = slots[0]
+        left_slots  = [s for s in slots if s.wave_side == "좌측"]
+        right_slots = [s for s in slots if s.wave_side == "우측"]
+
+        left_cap  = sum(s.zone_max_cnt for s in left_slots)
+        right_cap = sum(s.zone_max_cnt for s in right_slots)
+        total_cap = left_cap + right_cap
+
+        remaining = sample.slot_remaining
+
+        # 좌/우 잔여석 비율 배분 (총 정원이 없으면 동일 값 사용)
+        if total_cap:
+            left_rem  = round(remaining * left_cap  / total_cap)
+            right_rem = round(remaining * right_cap / total_cap)
+        else:
+            left_rem = right_rem = remaining
+
+        row: dict = {
+            "pick_date":       pick_date,
+            "pick_datetime":   pick_datetime,
+            "item_idx":        item_idx,
+            "sec_type":        sample.sec_type,
+            "time":            pick_datetime[11:16],          # "09:00"
+            "difficulty":      _difficulty_from_name(sample.item_name),
+            "wave_tags":       sample.wave_tags,
+            "left_remaining":  left_rem,
+            "left_capacity":   left_cap or sample.slot_capacity,
+            "right_remaining": right_rem,
+            "right_capacity":  right_cap or sample.slot_capacity,
+            "scraped_at":      scraped_at,
+        }
+
+        if sample.sec_type == "70":  # 레슨 블록
+            row["lesson_remaining"] = remaining
+            row["lesson_capacity"]  = sample.slot_capacity
+            if left_slots:
+                row["lesson_cove_side"] = "좌측"
+            elif right_slots:
+                row["lesson_cove_side"] = "우측"
+
+        rows.append(row)
+
+    return rows
+
+
+def upsert_to_supabase(results: list[ZoneSlot]) -> None:
+    """
+    수집 결과를 Supabase에 upsert합니다.
+
+    필요 환경변수 (wpbot/.env):
+      SUPABASE_URL         — Supabase 프로젝트 URL
+      SUPABASE_SERVICE_KEY  — Secret key (구 service_role key, Publishable key는 쓰기 불가)
+
+    대상 테이블:
+      zone_slots  — 원시 존 슬롯 데이터
+                    unique 제약: (pick_datetime, item_idx, sch_idx, zone_code)
+      sessions    — 프론트엔드용 집계 데이터
+                    unique 제약: (pick_datetime, item_idx)
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+
+    if not url or not key:
+        log.error(
+            "SUPABASE_URL / SUPABASE_SERVICE_KEY 환경변수 없음. "
+            "wpbot/.env 파일을 확인하세요."
+        )
+        return
+
+    try:
+        from supabase import create_client
+    except ImportError:
+        log.error("supabase 패키지 미설치: pip install supabase python-dotenv")
+        return
+
+    client     = create_client(url, key)
+    scraped_at = datetime.utcnow().isoformat()
+    CHUNK      = 500
+
+    # ── zone_slots ────────────────────────────────────────────
+    zone_rows = [{**r.to_dict(), "scraped_at": scraped_at} for r in results]
+    log.info(f"[Supabase] zone_slots upsert — {len(zone_rows)}행")
+    for i in range(0, len(zone_rows), CHUNK):
+        chunk = zone_rows[i : i + CHUNK]
+        client.table("zone_slots").upsert(chunk).execute()
+        log.info(f"  zone_slots  {min(i + CHUNK, len(zone_rows))}/{len(zone_rows)}")
+
+    # ── sessions ──────────────────────────────────────────────
+    session_rows = _build_sessions_rows(results, scraped_at)
+    log.info(f"[Supabase] sessions upsert — {len(session_rows)}행")
+    for i in range(0, len(session_rows), CHUNK):
+        chunk = session_rows[i : i + CHUNK]
+        client.table("sessions").upsert(chunk).execute()
+        log.info(f"  sessions    {min(i + CHUNK, len(session_rows))}/{len(session_rows)}")
+
+    log.info("[Supabase] 완료")
+
+
 def print_seasons(seasons: list[Season]) -> None:
     today = date.today()
     print(f"\n{'─'*56}")
@@ -699,6 +843,8 @@ def main() -> None:
                         help="결과 JSON 저장 경로")
     parser.add_argument("--available-only", action="store_true",
                         help="잔여석 있는 슬롯만 수집·출력")
+    parser.add_argument("--upload",         action="store_true",
+                        help="Supabase에 결과 upsert (SUPABASE_URL / SUPABASE_SERVICE_KEY 필요)")
     parser.add_argument("--list-seasons",   action="store_true",
                         help="등록된 시즌 목록 출력 후 종료")
     args = parser.parse_args()
@@ -721,6 +867,9 @@ def main() -> None:
 
     if args.out:
         save_json(results, args.out)
+
+    if args.upload:
+        upsert_to_supabase(results)
 
 
 if __name__ == "__main__":
