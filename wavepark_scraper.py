@@ -564,10 +564,14 @@ async def fetch_slot(
         wz = await client.get_wave_zone(slot)
     except Exception as e:
         log.warning(f"  getWaveZone 실패 [{item.name} / {slot.label}]: {repr(e)}")
-        return []  # 실패 시 저장하지 않음 (이전 DB 데이터 유지)
+        return []  # 네트워크 오류 → DB 미업데이트 (이전 데이터 유지)
 
     if not wz or not wz.positions:
-        return []
+        # 정상 응답이지만 positions=0 → 만석 → 0/0으로 upsert
+        entry = _make_zone_slot(season, item, slot)
+        if not (available_only and not entry.available):
+            results.append(entry)
+        return results
 
     for pos in wz.positions:
         for zone in wz.zones_for(pos.sch_idx):
@@ -741,7 +745,7 @@ async def scrape_async(
     )
 
     sem     = asyncio.Semaphore(concurrency)
-    timeout = aiohttp.ClientTimeout(total=30)
+    timeout = aiohttp.ClientTimeout(total=10)
 
     t0 = time.perf_counter()
 
